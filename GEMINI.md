@@ -28,3 +28,6 @@ Você está ajudando a criar um Web Scraping para automatizar a captura de infor
 * Manter os imports agrupados no topo do arquivo.
 * Adicionar comentários inline claros explicando cada etapa principal.
 
+# Fim
+
+
