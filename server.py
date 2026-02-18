@@ -3,12 +3,15 @@ import os
 import re
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 from queue import Queue, Empty
 from urllib.parse import quote
 
+import jwt
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import scrape_google_maps, save_to_csv
 from busca import main as busca_main
@@ -16,9 +19,137 @@ from busca import main as busca_main
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"]}})
 
+JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-production")
+JWT_EXPIRY_HOURS = 24
+USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+
 # Store job state: { job_id: { "status", "stage", "current", "total", "message", "output_file", "queue" } }
 jobs = {}
 
+
+# ---------- User storage helpers ----------
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return {}
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+
+# ---------- JWT helpers ----------
+
+def create_token(username):
+    payload = {
+        "sub": username,
+        "exp": datetime.now(tz=timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Accept token from Authorization header or query param (for EventSource / window.open)
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[len("Bearer "):]
+        else:
+            token = request.args.get("token", "")
+
+        if not token:
+            return jsonify({"error": "Token ausente ou inválido."}), 401
+        try:
+            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token expirado."}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Token inválido."}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ---------- Auth endpoints ----------
+
+def _validate_password_strength(password):
+    """Returns an error message if password doesn't meet requirements, else None."""
+    if len(password) < 8:
+        return "A senha deve ter pelo menos 8 caracteres."
+    if not re.search(r'[A-Z]', password):
+        return "A senha deve conter pelo menos uma letra maiúscula."
+    if not re.search(r'[a-z]', password):
+        return "A senha deve conter pelo menos uma letra minúscula."
+    if not re.search(r'[0-9]', password):
+        return "A senha deve conter pelo menos um número."
+    if not re.search(r'[^A-Za-z0-9]', password):
+        return "A senha deve conter pelo menos um símbolo (!@#$%...)."
+    return None
+
+
+@app.route("/api/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not name or not email or not password:
+        return jsonify({"error": "Nome, e-mail e senha são obrigatórios."}), 400
+
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return jsonify({"error": "E-mail inválido."}), 400
+
+    pwd_error = _validate_password_strength(password)
+    if pwd_error:
+        return jsonify({"error": pwd_error}), 400
+
+    users = load_users()
+    if email in users:
+        return jsonify({"error": "E-mail já cadastrado."}), 409
+
+    users[email] = {"name": name, "hash": generate_password_hash(password)}
+    save_users(users)
+
+    token = create_token(email)
+    return jsonify({"token": token, "username": name}), 201
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    # Accept 'email' or legacy 'username' field
+    email = (data.get("email") or data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "E-mail e senha são obrigatórios."}), 400
+
+    users = load_users()
+    user_data = users.get(email)
+
+    if not user_data:
+        return jsonify({"error": "Credenciais inválidas."}), 401
+
+    # Support legacy flat format {key: hash_string} and new format {key: {name, hash}}
+    if isinstance(user_data, str):
+        hashed = user_data
+        display_name = email
+    else:
+        hashed = user_data.get("hash", "")
+        display_name = user_data.get("name", email)
+
+    if not hashed or not check_password_hash(hashed, password):
+        return jsonify({"error": "Credenciais inválidas."}), 401
+
+    token = create_token(email)
+    return jsonify({"token": token, "username": display_name})
+
+
+# ---------- Utilities ----------
 
 def sanitize_filename(name):
     """Remove characters that are invalid in filenames."""
@@ -75,7 +206,10 @@ def run_job(job_id, termo, cidade):
         send_progress(job.get("stage", 1), 0, 0, "error", f"Erro: {str(e)}")
 
 
+# ---------- Protected API routes ----------
+
 @app.route("/api/search", methods=["POST"])
+@require_auth
 def start_search():
     data = request.get_json()
     termo = data.get("termo", "").strip()
@@ -102,6 +236,7 @@ def start_search():
 
 
 @app.route("/api/progress/<job_id>")
+@require_auth
 def progress(job_id):
     if job_id not in jobs:
         return jsonify({"error": "Job não encontrado."}), 404
@@ -125,6 +260,7 @@ def progress(job_id):
 
 
 @app.route("/api/download/<job_id>")
+@require_auth
 def download(job_id):
     if job_id not in jobs:
         return jsonify({"error": "Job não encontrado."}), 404

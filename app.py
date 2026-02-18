@@ -6,14 +6,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 def scrape_google_maps(url, progress_callback=None):
-    # Instalar e configurar o serviço do ChromeDriver
-    service = Service(ChromeDriverManager().install())
-
     # Configurar as opções do Chrome
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")  # Executar em modo headless (sem interface gráfica)
@@ -22,8 +18,14 @@ def scrape_google_maps(url, progress_callback=None):
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=pt-BR")
 
-    # Instanciar o WebDriver do Chrome
-    driver = webdriver.Chrome(service=service, options=options)
+    # Instanciar o WebDriver do Chrome utilizando o gerenciador nativo do Selenium
+    # Se falhar, o Selenium tentará baixar o driver adequado automaticamente.
+    try:
+        driver = webdriver.Chrome(options=options)
+    except Exception as e:
+        print(f"Erro ao inicializar o ChromeDriver: {e}")
+        # Tentar novamente forçando o serviço se necessário (geralmente não precisa na v4.40+)
+        raise e
 
     try:
         # Abrir a URL

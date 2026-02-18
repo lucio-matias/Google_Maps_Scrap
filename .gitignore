@@ -11,3 +11,15 @@ node_modules/
 
 # Generated data
 TEMP/
+
+# Agents
+.agents/
+.agent/
+
+# Sensitive data
+users.json
+
+# Test coverage
+.coverage
+
+

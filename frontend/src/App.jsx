@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import AuthForm from './AuthForm.jsx'
 
 function ProgressBar({ label, current, total }) {
   const percent = total > 0 ? Math.round((current / total) * 100) : 0
@@ -16,6 +17,9 @@ function ProgressBar({ label, current, total }) {
 }
 
 export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('token') || null)
+  const [username, setUsername] = useState(() => localStorage.getItem('username') || '')
+
   const [termo, setTermo] = useState('')
   const [cidade, setCidade] = useState('')
   const [loading, setLoading] = useState(false)
@@ -24,6 +28,23 @@ export default function App() {
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState('idle') // idle | running | completed | error
   const jobIdRef = useRef(null)
+
+  function handleAuth(newToken, newUsername) {
+    setToken(newToken)
+    setUsername(newUsername)
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('token')
+    localStorage.removeItem('username')
+    setToken(null)
+    setUsername('')
+    setStatus('idle')
+    setMessage('')
+    setStage1({ current: 0, total: 0 })
+    setStage2({ current: 0, total: 0 })
+    jobIdRef.current = null
+  }
 
   async function handleStart() {
     if (!termo.trim() || !cidade.trim()) return
@@ -37,10 +58,18 @@ export default function App() {
     try {
       const res = await fetch('/api/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ termo: termo.trim(), cidade: cidade.trim() }),
       })
       const data = await res.json()
+
+      if (res.status === 401) {
+        handleLogout()
+        return
+      }
       if (!res.ok) {
         setMessage(data.error || 'Erro ao iniciar busca.')
         setStatus('error')
@@ -58,7 +87,7 @@ export default function App() {
   }
 
   function listenProgress(jobId) {
-    const evtSource = new EventSource(`/api/progress/${jobId}`)
+    const evtSource = new EventSource(`/api/progress/${jobId}?token=${encodeURIComponent(token)}`)
 
     evtSource.onmessage = (event) => {
       const msg = JSON.parse(event.data)
@@ -93,13 +122,24 @@ export default function App() {
 
   function handleDownload() {
     if (jobIdRef.current) {
-      window.open(`/api/download/${jobIdRef.current}`, '_blank')
+      // Append token as query param since fetch with custom headers can't be used for direct downloads
+      window.open(`/api/download/${jobIdRef.current}?token=${encodeURIComponent(token)}`, '_blank')
     }
+  }
+
+  if (!token) {
+    return <AuthForm onAuth={handleAuth} />
   }
 
   return (
     <div className="container">
-      <img src="/logo.png" alt="Google Maps Scraper" className="logo" />
+      <div className="topbar">
+        <img src="/logo.png" alt="Google Maps Scraper" className="logo" />
+        <div className="user-info">
+          <span className="user-greeting">Olá, <strong>{username}</strong></span>
+          <button className="logout-btn" onClick={handleLogout}>Sair</button>
+        </div>
+      </div>
 
       <div className="form">
         <div className="field">
