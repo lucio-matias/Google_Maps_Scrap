@@ -122,6 +122,20 @@ def scrape_google_maps(url, progress_callback=None):
                 except:
                     pass
 
+                # Extrair coordenadas da URL atual
+                try:
+                    current_url = driver.current_url
+                    coord_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', current_url)
+                    if coord_match:
+                        lat = float(coord_match.group(1))
+                        lng = float(coord_match.group(2))
+                    else:
+                        lat = None
+                        lng = None
+                except:
+                    lat = None
+                    lng = None
+
                 # Fechar o painel de detalhes clicando no botão voltar
                 try:
                     back_btn = driver.find_element(By.CSS_SELECTOR, "button[jsaction*='back']")
@@ -135,16 +149,21 @@ def scrape_google_maps(url, progress_callback=None):
 
             except Exception as e:
                 print(f"Erro ao processar empresa {i+1}/{total} ({name}): {e}")
+                lat = None
+                lng = None
 
-            results.append({
+            result = {
                 "Name": name,
                 "Full Address": address,
                 "EMAIL": email,
-                "URL": website
-            })
+                "URL": website,
+                "lat": lat,
+                "lng": lng,
+            }
+            results.append(result)
             print(f"Empresa {i+1}/{total} processada: {name}")
             if progress_callback:
-                progress_callback(i + 1, total)
+                progress_callback(i + 1, total, result)
 
         return results
 

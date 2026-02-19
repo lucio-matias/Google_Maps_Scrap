@@ -180,7 +180,7 @@ def run_job(job_id, termo, cidade):
         query = f"{termo} em {cidade}"
         search_url = f"https://www.google.com/maps/search/{quote(query)}"
 
-        def stage1_callback(current, total):
+        def stage1_callback(current, total, result=None):
             send_progress(1, current, total, "running", f"Extraindo empresa {current}/{total}")
 
         scraped_data = scrape_google_maps(search_url, progress_callback=stage1_callback)
