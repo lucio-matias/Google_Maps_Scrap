@@ -205,3 +205,5 @@ if __name__ == "__main__":
         save_to_csv(scraped_data)
     else:
         print("Nenhum dado foi extraído.")
+
+# Teste
