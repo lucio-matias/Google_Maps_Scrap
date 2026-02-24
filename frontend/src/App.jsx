@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import AuthForm from './AuthForm.jsx'
 
 function ProgressBar({ label, current, total }) {
@@ -16,9 +16,26 @@ function ProgressBar({ label, current, total }) {
   )
 }
 
+function ThemeToggle({ theme, toggleTheme }) {
+  return (
+    <button className="theme-toggle" onClick={toggleTheme} title={`Mudar para modo ${theme === 'light' ? 'escuro' : 'claro'}`}>
+      {theme === 'light' ? (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="18.36" x2="5.64" y2="16.92"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+      )}
+    </button>
+  )
+}
+
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token') || null)
   const [username, setUsername] = useState(() => localStorage.getItem('username') || '')
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('theme')
+    if (savedTheme) return savedTheme
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
 
   const [termo, setTermo] = useState('')
   const [cidade, setCidade] = useState('')
@@ -28,6 +45,15 @@ export default function App() {
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState('idle') // idle | running | completed | error
   const jobIdRef = useRef(null)
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  function toggleTheme() {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light')
+  }
 
   function handleAuth(newToken, newUsername) {
     setToken(newToken)
@@ -128,7 +154,14 @@ export default function App() {
   }
 
   if (!token) {
-    return <AuthForm onAuth={handleAuth} />
+    return (
+      <div className="auth-theme-wrapper">
+        <div style={{ position: 'absolute', top: '24px', right: '24px' }}>
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+        </div>
+        <AuthForm onAuth={handleAuth} />
+      </div>
+    )
   }
 
   return (
@@ -136,6 +169,7 @@ export default function App() {
       <div className="topbar">
         <img src="/logo.png" alt="Google Maps Scraper" className="logo" />
         <div className="user-info">
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           <span className="user-greeting">Olá, <strong>{username}</strong></span>
           <button className="logout-btn" onClick={handleLogout}>Sair</button>
         </div>

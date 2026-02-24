@@ -11,10 +11,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 source .venv/bin/activate
 
 # Run Flask server (port 5001)
-python server.py
+python3 server.py
 
-# Run all tests
-pytest tests/
+# Alternatively, using uv
+uv run server.py
 
 # Run a single test file
 pytest tests/test_auth.py -v
